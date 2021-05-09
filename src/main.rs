@@ -89,7 +89,16 @@ fn main() -> std::io::Result<()> {
         file
     };
 
-    let mut var_map = HashMap::new();
+    let mut var_map: HashMap<String, String> = HashMap::new();
+
+    var_map.insert(
+        String::from("MAKE"),
+        env::current_exe()
+            .unwrap()
+            .into_os_string()
+            .into_string()
+            .unwrap_or(String::from("make")),
+    );
 
     if let Ok(mut file) = file {
         let mut content = String::new();
@@ -204,7 +213,7 @@ fn main() -> std::io::Result<()> {
                             match it.peek() {
                                 Some('\t') => {
                                     it.next(); // Skip \t
-                                    State::Recipes(targets, prereqs, Vec::new(), String::new())
+                                    State::Recipes(targets, prereqs, recipes, String::new())
                                 }
                                 _ => {
                                     println!(
