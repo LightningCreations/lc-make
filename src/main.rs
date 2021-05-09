@@ -5,6 +5,7 @@ use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 
+/*
 enum MatchResult {
     Perfect,
     Partial(String), // % in %.c, etc
@@ -14,6 +15,7 @@ enum MatchResult {
 fn matches(spec: String, name: String) -> MatchResult {
     MatchResult::Different
 }
+*/
 
 enum State {
     Left(String),                                           // Processing
@@ -45,7 +47,7 @@ fn main() -> std::io::Result<()> {
         env::set_current_dir(Path::new(dir))?;
     }
 
-    let mut file = if let Some(file) = matches.value_of("file") {
+    let file = if let Some(file) = matches.value_of("file") {
         File::open(file)
     } else {
         let mut file = File::open("GNUmakefile");
@@ -70,37 +72,35 @@ fn main() -> std::io::Result<()> {
                         it.next();
                     }
                 }
-                ':' => {
-                    match state {
-                        State::Left(prev) => {
-                            let next = it.peek();
-                            state = match next {
-                                Some(':') => {
-                                    it.next();
-                                    if it.next() != Some('=') {
-                                        panic!("Syntax error");
-                                    }
-                                    State::RightVariable(prev, true, String::new())
+                ':' => match state {
+                    State::Left(prev) => {
+                        let next = it.peek();
+                        state = match next {
+                            Some(':') => {
+                                it.next();
+                                if it.next() != Some('=') {
+                                    panic!("Syntax error");
                                 }
-                                Some('=') => {
-                                    it.next();
-                                    State::RightVariable(prev, true, String::new())
-                                }
-                                _ => State::RightRule(
-                                    prev.split_whitespace().map(|s| s.to_string()).collect(),
-                                    String::new(),
-                                ),
+                                State::RightVariable(prev, true, String::new())
                             }
+                            Some('=') => {
+                                it.next();
+                                State::RightVariable(prev, true, String::new())
+                            }
+                            _ => State::RightRule(
+                                prev.split_whitespace().map(|s| s.to_string()).collect(),
+                                String::new(),
+                            ),
                         }
-                        State::RightVariable(_, _, ref mut work) => {
-                            work.push(':');
-                        }
-                        State::Recipes(_, _, _, ref mut work) => {
-                            work.push(':');
-                        }
-                        _ => panic!("Syntax error"),
                     }
-                }
+                    State::RightVariable(_, _, ref mut work) => {
+                        work.push(':');
+                    }
+                    State::Recipes(_, _, _, ref mut work) => {
+                        work.push(':');
+                    }
+                    _ => panic!("Syntax error"),
+                },
                 '=' => {
                     match state {
                         State::Left(prev) => {
@@ -120,22 +120,18 @@ fn main() -> std::io::Result<()> {
                         State::Left(x) if x.is_empty() => State::Left(String::new()),
                         State::Left(_) => panic!("Syntax error"),
                         State::RightVariable(name, complex, value) => {
-                            println!("Variable \"{}\" with value \"{}\" (is complex = {})", name, value, complex);
+                            println!(
+                                "Variable \"{}\" with value \"{}\" (is complex = {})",
+                                name, value, complex
+                            );
                             State::Left(String::new())
                         }
                         State::RightRule(targets, prereqs) => {
-                            while match it.peek() {
-                                Some('\n') => true,
-                                Some('#') => true,
-                                _ => false
-                            } {
-                                match it.next() {
-                                    Some('#') => {
-                                        while *(it.peek().unwrap()) != '\n' {
-                                            it.next();
-                                        }
-                                    },
-                                    _ => {}
+                            while matches!(it.peek(), Some('\n') | Some('#')) {
+                                if let Some('#') = it.next() {
+                                    while *(it.peek().unwrap()) != '\n' {
+                                        it.next();
+                                    }
                                 };
                             }
                             match it.peek() {
@@ -160,23 +156,18 @@ fn main() -> std::io::Result<()> {
                             }
                         }
                         State::Recipes(targets, prereqs, mut recipes, work) => {
-                            while match it.peek() {
-                                Some('\n') => true,
-                                Some('#') => true,
-                                _ => false
-                            } {
-                                it.next();
+                            while matches!(it.peek(), Some('\n') | Some('#')) {
+                                if let Some('#') = it.next() {
+                                    while *(it.peek().unwrap()) != '\n' {
+                                        it.next();
+                                    }
+                                };
                             }
                             recipes.push(work);
                             match it.peek() {
                                 Some('\t') => {
                                     it.next(); // Skip \t
-                                    State::Recipes(
-                                        targets,
-                                        prereqs,
-                                        Vec::new(),
-                                        String::new(),
-                                    )
+                                    State::Recipes(targets, prereqs, Vec::new(), String::new())
                                 }
                                 _ => {
                                     println!(
