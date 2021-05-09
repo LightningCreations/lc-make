@@ -30,12 +30,16 @@ fn variable_subst(it: &mut dyn Iterator<Item = char>) -> String {
         Some('(') => {
             let mut variable: String = String::new();
             let mut c: String;
-            while {c = match it.next() {
-                Some('#') => panic!("Syntax error"),
-                Some('$') => variable_subst(it),
-                Some(x) => x.to_string(),
-                x => panic!("{:#?}", x),
-            }; &c} != ")" {
+            while {
+                c = match it.next() {
+                    Some('#') => panic!("Syntax error"),
+                    Some('$') => variable_subst(it),
+                    Some(x) => x.to_string(),
+                    x => panic!("{:#?}", x),
+                };
+                &c
+            } != ")"
+            {
                 variable += &c;
             }
             "<value of \"".to_owned() + &variable + "\">"
@@ -93,7 +97,7 @@ fn main() -> std::io::Result<()> {
                         State::Left(ref mut work) => work,
                         State::RightRule(_, ref mut work) => work,
                         State::RightVariable(_, _, ref mut work) => work,
-                        State::Recipes(_, _, _, ref mut work) => work
+                        State::Recipes(_, _, _, ref mut work) => work,
                     };
                     work.push_str(&variable_subst(&mut it));
                 }
