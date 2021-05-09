@@ -8,7 +8,7 @@ use std::path::Path;
 enum MatchResult {
     Perfect,
     Partial(String), // % in %.c, etc
-    Different
+    Different,
 }
 
 fn matches(spec: String, name: String) -> MatchResult {
@@ -16,10 +16,10 @@ fn matches(spec: String, name: String) -> MatchResult {
 }
 
 enum State {
-    Left(String), // Processing
-    RightVariable(String, String), // Variable name, Processing
-    RightRule(Vec<String>, String), // Target names, Processing
-    Recipes(Vec<String>, Vec<String>, Vec<String>, String) // Targets, Prereqs, Current list, Processing
+    Left(String),                                           // Processing
+    RightVariable(String, String),                          // Variable name, Processing
+    RightRule(Vec<String>, String),                         // Target names, Processing
+    Recipes(Vec<String>, Vec<String>, Vec<String>, String), // Targets, Prereqs, Current list, Processing
 }
 
 fn main() -> std::io::Result<()> {
@@ -64,23 +64,26 @@ fn main() -> std::io::Result<()> {
                                         panic!("Syntax error");
                                     }
                                     State::RightVariable(prev, String::new())
-                                },
+                                }
                                 Some('=') => {
                                     it.next();
                                     State::RightVariable(prev, String::new())
-                                },
-                                _ => State::RightRule(prev.split_whitespace().map(|s| s.to_string()).collect(), String::new())
+                                }
+                                _ => State::RightRule(
+                                    prev.split_whitespace().map(|s| s.to_string()).collect(),
+                                    String::new(),
+                                ),
                             }
-                        },
-                        _ => panic!("Syntax error")
+                        }
+                        _ => panic!("Syntax error"),
                     }
-                },
+                }
                 '\n' => {
                     state = match state {
                         State::Left(x) if x.is_empty() => State::Left(String::new()),
-                        _ => unreachable!()
+                        _ => unreachable!(),
                     };
-                },
+                }
                 _ => {
                     panic!("Unimpled");
                 }
