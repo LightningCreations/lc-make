@@ -1,5 +1,6 @@
 use clap::{App, Arg};
 
+use std::collections::HashMap;
 use std::env;
 use std::fs::File;
 use std::io::Read;
@@ -24,7 +25,10 @@ enum State {
     Recipes(Vec<String>, Vec<String>, Vec<String>, String), // Targets, Prereqs, Current list, Processing
 }
 
-fn variable_subst(it: &mut dyn Iterator<Item = char>) -> String {
+fn variable_subst(
+    it: &mut dyn Iterator<Item = char>,
+    var_map: &mut HashMap<String, String>,
+) -> String {
     match it.next() {
         Some('$') => String::from("$"),
         Some('(') => {
@@ -33,7 +37,7 @@ fn variable_subst(it: &mut dyn Iterator<Item = char>) -> String {
             while {
                 c = match it.next() {
                     Some('#') => panic!("Syntax error"),
-                    Some('$') => variable_subst(it),
+                    Some('$') => variable_subst(it, var_map),
                     Some(x) => x.to_string(),
                     x => panic!("{:#?}", x),
                 };
@@ -42,7 +46,7 @@ fn variable_subst(it: &mut dyn Iterator<Item = char>) -> String {
             {
                 variable += &c;
             }
-            "<value of \"".to_owned() + &variable + "\">"
+            var_map.get(&variable).unwrap_or(&String::new()).clone()
         }
         Some(x) => panic!("${} ???", x),
         x => panic!("{:#?}", x),
@@ -85,6 +89,8 @@ fn main() -> std::io::Result<()> {
         file
     };
 
+    let mut var_map = HashMap::new();
+
     if let Ok(mut file) = file {
         let mut content = String::new();
         file.read_to_string(&mut content)?;
@@ -99,7 +105,7 @@ fn main() -> std::io::Result<()> {
                         State::RightVariable(_, _, ref mut work) => work,
                         State::Recipes(_, _, _, ref mut work) => work,
                     };
-                    work.push_str(&variable_subst(&mut it));
+                    work.push_str(&variable_subst(&mut it, &mut var_map));
                 }
                 '#' => {
                     while *(it.peek().unwrap()) != '\n' {
@@ -153,11 +159,8 @@ fn main() -> std::io::Result<()> {
                     state = match state {
                         State::Left(x) if x.is_empty() => State::Left(String::new()),
                         State::Left(_) => panic!("Syntax error"),
-                        State::RightVariable(name, complex, value) => {
-                            println!(
-                                "Variable \"{}\" with value \"{}\" (is complex = {})",
-                                name, value, complex
-                            );
+                        State::RightVariable(name, _, value) => {
+                            var_map.insert(name.trim().to_owned(), value);
                             State::Left(String::new())
                         }
                         State::RightRule(targets, prereqs) => {
