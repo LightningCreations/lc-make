@@ -12,7 +12,7 @@ enum MatchResult {
 }
 
 fn matches(spec: String, name: String) -> MatchResult {
-    return MatchResult::Different;
+    MatchResult::Different
 }
 
 enum State {
@@ -65,6 +65,11 @@ fn main() -> std::io::Result<()> {
         let mut state = State::Left(String::new());
         while let Some(c) = it.next() {
             match c {
+                '#' => {
+                    while *(it.peek().unwrap()) != '\n' {
+                        it.next();
+                    }
+                }
                 ':' => {
                     state = match state {
                         State::Left(prev) => {
@@ -93,11 +98,44 @@ fn main() -> std::io::Result<()> {
                 '\n' => {
                     state = match state {
                         State::Left(x) if x.is_empty() => State::Left(String::new()),
+                        State::Left(_) => panic!("Syntax error"),
+                        State::RightVariable(name, value) => {
+                            println!("Variable \"{}\" with value \"{}\"", name, value);
+                            State::Left(String::new())
+                        }
+                        State::RightRule(targets, prereqs) => {
+                            while *(it.peek().unwrap()) == '\n' {
+                                it.next();
+                            }
+                            match it.peek() {
+                                Some('\t') => State::Recipes(
+                                    targets,
+                                    prereqs.split_whitespace().map(|s| s.to_string()).collect(),
+                                    Vec::new(),
+                                    String::new(),
+                                ),
+                                _ => {
+                                    let prereqs: Vec<String> =
+                                        prereqs.split_whitespace().map(|s| s.to_string()).collect();
+                                    println!(
+                                        "Rule for targets {:#?}; prereqs {:#?}",
+                                        targets, prereqs
+                                    );
+                                    State::Left(String::new())
+                                }
+                            }
+                        }
                         _ => unreachable!(),
                     };
                 }
-                _ => {
-                    panic!("Unimpled");
+                x => {
+                    let mut work = match state {
+                        State::Left(ref mut work) => work,
+                        State::RightVariable(_, ref mut work) => work,
+                        State::RightRule(_, ref mut work) => work,
+                        State::Recipes(_, _, _, ref mut work) => work
+                    };
+                    work.push(x);
                 }
             }
         }
