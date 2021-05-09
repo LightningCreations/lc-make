@@ -133,7 +133,7 @@ fn main() -> std::io::Result<()> {
                         State::Left(ref mut work) => work,
                         State::RightVariable(_, ref mut work) => work,
                         State::RightRule(_, ref mut work) => work,
-                        State::Recipes(_, _, _, ref mut work) => work
+                        State::Recipes(_, _, _, ref mut work) => work,
                     };
                     work.push(x);
                 }
