@@ -17,8 +17,8 @@ fn matches(spec: String, name: String) -> MatchResult {
 
 enum State {
     Left(String),                                           // Processing
-    RightVariable(String, String),                          // Variable name, Processing
-    RightRule(Vec<String>, String),                         // Target names, Processing
+    RightVariable(String, bool, String), // Variable name, Is a complex variable, Processing
+    RightRule(Vec<String>, String),      // Target names, Processing
     Recipes(Vec<String>, Vec<String>, Vec<String>, String), // Targets, Prereqs, Current list, Processing
 }
 
@@ -71,20 +71,20 @@ fn main() -> std::io::Result<()> {
                     }
                 }
                 ':' => {
-                    state = match state {
+                    match state {
                         State::Left(prev) => {
                             let next = it.peek();
-                            match next {
+                            state = match next {
                                 Some(':') => {
                                     it.next();
                                     if it.next() != Some('=') {
                                         panic!("Syntax error");
                                     }
-                                    State::RightVariable(prev, String::new())
+                                    State::RightVariable(prev, true, String::new())
                                 }
                                 Some('=') => {
                                     it.next();
-                                    State::RightVariable(prev, String::new())
+                                    State::RightVariable(prev, true, String::new())
                                 }
                                 _ => State::RightRule(
                                     prev.split_whitespace().map(|s| s.to_string()).collect(),
@@ -92,28 +92,62 @@ fn main() -> std::io::Result<()> {
                                 ),
                             }
                         }
+                        State::RightVariable(_, _, ref mut work) => {
+                            work.push(':');
+                        }
+                        State::Recipes(_, _, _, ref mut work) => {
+                            work.push(':');
+                        }
                         _ => panic!("Syntax error"),
                     }
+                }
+                '=' => {
+                    match state {
+                        State::Left(prev) => {
+                            state = State::RightVariable(prev, false, String::new());
+                        }
+                        State::RightVariable(_, _, ref mut work) => {
+                            work.push('=');
+                        }
+                        State::Recipes(_, _, _, ref mut work) => {
+                            work.push('=');
+                        }
+                        _ => panic!("Syntax error"),
+                    };
                 }
                 '\n' => {
                     state = match state {
                         State::Left(x) if x.is_empty() => State::Left(String::new()),
                         State::Left(_) => panic!("Syntax error"),
-                        State::RightVariable(name, value) => {
-                            println!("Variable \"{}\" with value \"{}\"", name, value);
+                        State::RightVariable(name, complex, value) => {
+                            println!("Variable \"{}\" with value \"{}\" (is complex = {})", name, value, complex);
                             State::Left(String::new())
                         }
                         State::RightRule(targets, prereqs) => {
-                            while *(it.peek().unwrap()) == '\n' {
-                                it.next();
+                            while match it.peek() {
+                                Some('\n') => true,
+                                Some('#') => true,
+                                _ => false
+                            } {
+                                match it.next() {
+                                    Some('#') => {
+                                        while *(it.peek().unwrap()) != '\n' {
+                                            it.next();
+                                        }
+                                    },
+                                    _ => {}
+                                };
                             }
                             match it.peek() {
-                                Some('\t') => State::Recipes(
-                                    targets,
-                                    prereqs.split_whitespace().map(|s| s.to_string()).collect(),
-                                    Vec::new(),
-                                    String::new(),
-                                ),
+                                Some('\t') => {
+                                    it.next(); // Skip \t
+                                    State::Recipes(
+                                        targets,
+                                        prereqs.split_whitespace().map(|s| s.to_string()).collect(),
+                                        Vec::new(),
+                                        String::new(),
+                                    )
+                                }
                                 _ => {
                                     let prereqs: Vec<String> =
                                         prereqs.split_whitespace().map(|s| s.to_string()).collect();
@@ -125,13 +159,40 @@ fn main() -> std::io::Result<()> {
                                 }
                             }
                         }
-                        _ => unreachable!(),
+                        State::Recipes(targets, prereqs, mut recipes, work) => {
+                            while match it.peek() {
+                                Some('\n') => true,
+                                Some('#') => true,
+                                _ => false
+                            } {
+                                it.next();
+                            }
+                            recipes.push(work);
+                            match it.peek() {
+                                Some('\t') => {
+                                    it.next(); // Skip \t
+                                    State::Recipes(
+                                        targets,
+                                        prereqs,
+                                        Vec::new(),
+                                        String::new(),
+                                    )
+                                }
+                                _ => {
+                                    println!(
+                                        "Rule for targets {:#?}; prereqs {:#?}, recipes {:#?}",
+                                        targets, prereqs, recipes
+                                    );
+                                    State::Left(String::new())
+                                }
+                            }
+                        }
                     };
                 }
                 x => {
-                    let mut work = match state {
+                    let work = match state {
                         State::Left(ref mut work) => work,
-                        State::RightVariable(_, ref mut work) => work,
+                        State::RightVariable(_, _, ref mut work) => work,
                         State::RightRule(_, ref mut work) => work,
                         State::Recipes(_, _, _, ref mut work) => work,
                     };
