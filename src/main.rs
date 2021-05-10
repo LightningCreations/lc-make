@@ -163,7 +163,17 @@ fn load_makefile(
             }
             '\n' => {
                 state = match state {
-                    State::Left(x) if x.is_empty() => State::Left(String::new()),
+                    State::Left(x) if x.trim().is_empty() => State::Left(String::new()),
+                    State::Left(x) if x.trim().starts_with("include ") => {
+                        let filename = x.trim().get(8..).unwrap().trim();
+                        let file = File::open(filename);
+                        if let Ok(mut file) = file {
+                            load_makefile(&mut file, var_map, rule_list)?;
+                        } else {
+                            panic!("Couldn't open {}", filename);
+                        }
+                        State::Left(String::new())
+                    }
                     State::Left(_) => panic!("Syntax error"),
                     State::RightVariable(name, _, value) => {
                         var_map.insert(name.trim().to_owned(), value);
