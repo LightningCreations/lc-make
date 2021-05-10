@@ -297,7 +297,9 @@ fn main() -> std::io::Result<()> {
     for rule in rule_list {
         let mut handled = false;
         if rule.targets.len() == 1 {
-            if rule.targets[0] == ".SUFFIXES" {
+            if rule.targets[0] == ".POSIX" {
+                handled = true; // We should be POSIX compliant enough; no special flags needed
+            } else if rule.targets[0] == ".SUFFIXES" {
                 handled = true;
                 if rule.prereqs.is_empty() {
                     append_implicit_rules = false;
