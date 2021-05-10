@@ -6,6 +6,7 @@ use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 use std::process::Command;
+use std::time::SystemTime;
 
 enum State {
     Left(String),                                           // Processing
@@ -72,19 +73,37 @@ fn matches(spec: String, name: String) -> MatchResult {
 }
 */
 
-fn build(target: &FinalRule, rule_list: &[FinalRule], silent: bool) {
+fn build(target: &FinalRule, rule_list: &[FinalRule], silent: bool) -> SystemTime {
+    let mut newest_dep: SystemTime = SystemTime::UNIX_EPOCH;
     for prereq in &target.prereqs {
         let mut success = false;
         for rule in rule_list {
             if rule.target == *prereq {
                 success = true;
-                build(rule, rule_list, silent);
+                newest_dep = std::cmp::max(build(rule, rule_list, silent), newest_dep);
                 break;
             }
         }
         if !success && !Path::new(prereq).exists() {
             panic!("No rule to build target \"{}\", stopping.", prereq);
+        } else if !success {
+            newest_dep = std::cmp::max(
+                std::fs::metadata(prereq).unwrap().modified().unwrap(),
+                newest_dep,
+            );
         }
+    }
+    if Path::new(&target.target).exists()
+        && newest_dep
+            < std::fs::metadata(&target.target)
+                .unwrap()
+                .modified()
+                .unwrap()
+    {
+        return std::fs::metadata(&target.target)
+            .unwrap()
+            .modified()
+            .unwrap();
     }
     for recipe in &target.recipes {
         let mut recipe = recipe.trim();
@@ -103,6 +122,7 @@ fn build(target: &FinalRule, rule_list: &[FinalRule], silent: bool) {
             panic!("Program exited with nonzero status, stopping.");
         }
     }
+    SystemTime::now()
 }
 
 fn load_makefile(
@@ -373,7 +393,7 @@ fn main() -> std::io::Result<()> {
                         */ // This got annoying fast
                     } else if !inference_rules_warning {
                         handled = true;
-                        println!("Warning: POSIX-style inference rules are unimplemented");
+                        // println!("Warning: POSIX-style inference rules are unimplemented");
                         inference_rules_warning = true;
                     }
                 }
@@ -401,7 +421,7 @@ fn main() -> std::io::Result<()> {
         }
     }
     if append_implicit_rules && !inference_rules_warning {
-        println!("Warning: POSIX-style inference rules are unimplemented");
+        // println!("Warning: POSIX-style inference rules are unimplemented");
     }
 
     let rule: &FinalRule = if matches.is_present("target") {
@@ -425,10 +445,6 @@ fn main() -> std::io::Result<()> {
         &final_rule_list[0]
     };
 
-    build(
-        rule,
-        &final_rule_list,
-        /*matches.is_present("silent")*/ false,
-    ); // don't be silent for debugging purposes
+    build(rule, &final_rule_list, matches.is_present("silent")); // don't be silent for debugging purposes
     Ok(())
 }
