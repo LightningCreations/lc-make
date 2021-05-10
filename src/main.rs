@@ -5,18 +5,7 @@ use std::env;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
-
-/*
-enum MatchResult {
-    Perfect,
-    Partial(String), // % in %.c, etc
-    Different,
-}
-
-fn matches(spec: String, name: String) -> MatchResult {
-    MatchResult::Different
-}
-*/
+use std::process::Command;
 
 enum State {
     Left(String),                                           // Processing
@@ -66,6 +55,44 @@ fn variable_subst(
     }
 }
 
+/*
+enum MatchResult {
+    Perfect,
+    Partial(String), // % in %.c, etc
+    Different,
+}
+
+fn matches(spec: String, name: String) -> MatchResult {
+    MatchResult::Different
+}
+*/
+
+fn build(target: &FinalRule, rule_list: &[FinalRule], silent: bool) {
+    for prereq in &target.prereqs {
+        let mut success = false;
+        for rule in rule_list {
+            if rule.target == *prereq {
+                success = true;
+                build(rule, rule_list, silent);
+                break;
+            }
+        }
+        if !success {
+            panic!("No rule to build target \"{}\", stopping.", prereq);
+        }
+    }
+    for recipe in &target.recipes {
+        if !silent {
+            println!("{}", recipe);
+        }
+        Command::new("sh")
+            .arg("-c")
+            .arg(recipe)
+            .output()
+            .expect("Process exited with nonzero status");
+    }
+}
+
 fn main() -> std::io::Result<()> {
     let matches = App::new("LC Make")
         .version("0.1.0")
@@ -83,6 +110,12 @@ fn main() -> std::io::Result<()> {
                 .takes_value(true)
                 .help("Use <file> as a makefile"),
         )
+        .arg(
+            Arg::with_name("silent")
+                .short("s")
+                .help("Don't echo recipes"),
+        )
+        .arg(Arg::with_name("target"))
         .get_matches();
 
     if let Some(dir) = matches.value_of("dir") {
@@ -110,7 +143,7 @@ fn main() -> std::io::Result<()> {
             .unwrap()
             .into_os_string()
             .into_string()
-            .unwrap_or(String::from("make")),
+            .unwrap_or_else(|_| String::from("make")),
     );
 
     let mut rule_list: Vec<Rule> = Vec::new();
@@ -266,7 +299,7 @@ fn main() -> std::io::Result<()> {
         if rule.targets.len() == 1 {
             if rule.targets[0] == ".SUFFIXES" {
                 handled = true;
-                if rule.prereqs.len() == 0 {
+                if rule.prereqs.is_empty() {
                     append_implicit_rules = false;
                 } else if rule.prereqs.len() != 1
                     || rule.prereqs[0] != ".hpux_make_needs_suffix_list"
@@ -283,6 +316,7 @@ fn main() -> std::io::Result<()> {
                             rule.targets[0]
                         );
                     } else if !inference_rules_warning {
+                        handled = true;
                         println!("Warning: POSIX-style inference rules are unimplemented");
                         inference_rules_warning = true;
                     }
@@ -314,7 +348,27 @@ fn main() -> std::io::Result<()> {
         println!("Warning: POSIX-style inference rules are unimplemented");
     }
 
-    println!("{:#?}", final_rule_list);
+    let rule: &FinalRule = if matches.is_present("target") {
+        let mut result: Option<&FinalRule> = None; // This is only slightly garbage
+        for rule in &final_rule_list {
+            if rule.target == matches.value_of("target").unwrap() {
+                result = Some(rule);
+                break;
+            }
+        }
+        match result {
+            Some(result) => result,
+            _ => panic!(
+                "No rule to make target {}, quitting!",
+                matches.value_of("target").unwrap()
+            ),
+        }
+    } else if final_rule_list.is_empty() {
+        panic!("No targets available, quitting!")
+    } else {
+        &final_rule_list[0]
+    };
 
+    build(rule, &final_rule_list, matches.is_present("silent"));
     Ok(())
 }
