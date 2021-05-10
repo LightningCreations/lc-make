@@ -93,6 +93,149 @@ fn build(target: &FinalRule, rule_list: &[FinalRule], silent: bool) {
     }
 }
 
+fn load_makefile(file: &mut File, var_map: &mut HashMap<String, String>, rule_list: &mut Vec<Rule>) -> std::io::Result<()> {
+    let mut content = String::new();
+    file.read_to_string(&mut content)?;
+    let mut it = content.chars().peekable();
+    let mut state = State::Left(String::new());
+    while let Some(c) = it.next() {
+        match c {
+            '$' => {
+                let work = match state {
+                    State::Left(ref mut work) => work,
+                    State::RightRule(_, ref mut work) => work,
+                    State::RightVariable(_, _, ref mut work) => work,
+                    State::Recipes(_, _, _, ref mut work) => work,
+                };
+                work.push_str(&variable_subst(&mut it, var_map));
+            }
+            '#' => {
+                while *(it.peek().unwrap()) != '\n' {
+                    it.next();
+                }
+            }
+            ':' => match state {
+                State::Left(prev) => {
+                    let next = it.peek();
+                    state = match next {
+                        Some(':') => {
+                            it.next();
+                            if it.next() != Some('=') {
+                                panic!("Syntax error");
+                            }
+                            State::RightVariable(prev, true, String::new())
+                        }
+                        Some('=') => {
+                            it.next();
+                            State::RightVariable(prev, true, String::new())
+                        }
+                        _ => State::RightRule(
+                            prev.split_whitespace().map(|s| s.to_string()).collect(),
+                            String::new(),
+                        ),
+                    }
+                }
+                State::RightVariable(_, _, ref mut work) => {
+                    work.push(':');
+                }
+                State::Recipes(_, _, _, ref mut work) => {
+                    work.push(':');
+                }
+                _ => panic!("Syntax error"),
+            },
+            '=' => {
+                match state {
+                    State::Left(prev) => {
+                        state = State::RightVariable(prev, false, String::new());
+                    }
+                    State::RightVariable(_, _, ref mut work) => {
+                        work.push('=');
+                    }
+                    State::Recipes(_, _, _, ref mut work) => {
+                        work.push('=');
+                    }
+                    _ => panic!("Syntax error"),
+                };
+            }
+            '\n' => {
+                state = match state {
+                    State::Left(x) if x.is_empty() => State::Left(String::new()),
+                    State::Left(_) => panic!("Syntax error"),
+                    State::RightVariable(name, _, value) => {
+                        var_map.insert(name.trim().to_owned(), value);
+                        State::Left(String::new())
+                    }
+                    State::RightRule(targets, prereqs) => {
+                        while matches!(it.peek(), Some('\n') | Some('#')) {
+                            if let Some('#') = it.next() {
+                                while *(it.peek().unwrap()) != '\n' {
+                                    it.next();
+                                }
+                            };
+                        }
+                        match it.peek() {
+                            Some('\t') => {
+                                it.next(); // Skip \t
+                                State::Recipes(
+                                    targets,
+                                    prereqs.split_whitespace().map(|s| s.to_string()).collect(),
+                                    Vec::new(),
+                                    String::new(),
+                                )
+                            }
+                            _ => {
+                                let prereqs: Vec<String> =
+                                    prereqs.split_whitespace().map(|s| s.to_string()).collect();
+                                let recipes = Vec::new();
+                                rule_list.push(Rule {
+                                    targets,
+                                    prereqs,
+                                    recipes,
+                                });
+                                State::Left(String::new())
+                            }
+                        }
+                    }
+                    State::Recipes(targets, prereqs, mut recipes, work) => {
+                        while matches!(it.peek(), Some('\n') | Some('#')) {
+                            if let Some('#') = it.next() {
+                                while *(it.peek().unwrap()) != '\n' {
+                                    it.next();
+                                }
+                            };
+                        }
+                        recipes.push(work);
+                        match it.peek() {
+                            Some('\t') => {
+                                it.next(); // Skip \t
+                                State::Recipes(targets, prereqs, recipes, String::new())
+                            }
+                            _ => {
+                                rule_list.push(Rule {
+                                    targets,
+                                    prereqs,
+                                    recipes,
+                                });
+                                State::Left(String::new())
+                            }
+                        }
+                    }
+                };
+            }
+            x => {
+                let work = match state {
+                    State::Left(ref mut work) => work,
+                    State::RightVariable(_, _, ref mut work) => work,
+                    State::RightRule(_, ref mut work) => work,
+                    State::Recipes(_, _, _, ref mut work) => work,
+                };
+                work.push(x);
+            }
+        }
+    }
+    Ok(())
+}
+
 fn main() -> std::io::Result<()> {
     let matches = App::new("LC Make")
         .version("0.1.0")
@@ -149,145 +292,7 @@ fn main() -> std::io::Result<()> {
     let mut rule_list: Vec<Rule> = Vec::new();
 
     if let Ok(mut file) = file {
-        let mut content = String::new();
-        file.read_to_string(&mut content)?;
-        let mut it = content.chars().peekable();
-        let mut state = State::Left(String::new());
-        while let Some(c) = it.next() {
-            match c {
-                '$' => {
-                    let work = match state {
-                        State::Left(ref mut work) => work,
-                        State::RightRule(_, ref mut work) => work,
-                        State::RightVariable(_, _, ref mut work) => work,
-                        State::Recipes(_, _, _, ref mut work) => work,
-                    };
-                    work.push_str(&variable_subst(&mut it, &mut var_map));
-                }
-                '#' => {
-                    while *(it.peek().unwrap()) != '\n' {
-                        it.next();
-                    }
-                }
-                ':' => match state {
-                    State::Left(prev) => {
-                        let next = it.peek();
-                        state = match next {
-                            Some(':') => {
-                                it.next();
-                                if it.next() != Some('=') {
-                                    panic!("Syntax error");
-                                }
-                                State::RightVariable(prev, true, String::new())
-                            }
-                            Some('=') => {
-                                it.next();
-                                State::RightVariable(prev, true, String::new())
-                            }
-                            _ => State::RightRule(
-                                prev.split_whitespace().map(|s| s.to_string()).collect(),
-                                String::new(),
-                            ),
-                        }
-                    }
-                    State::RightVariable(_, _, ref mut work) => {
-                        work.push(':');
-                    }
-                    State::Recipes(_, _, _, ref mut work) => {
-                        work.push(':');
-                    }
-                    _ => panic!("Syntax error"),
-                },
-                '=' => {
-                    match state {
-                        State::Left(prev) => {
-                            state = State::RightVariable(prev, false, String::new());
-                        }
-                        State::RightVariable(_, _, ref mut work) => {
-                            work.push('=');
-                        }
-                        State::Recipes(_, _, _, ref mut work) => {
-                            work.push('=');
-                        }
-                        _ => panic!("Syntax error"),
-                    };
-                }
-                '\n' => {
-                    state = match state {
-                        State::Left(x) if x.is_empty() => State::Left(String::new()),
-                        State::Left(_) => panic!("Syntax error"),
-                        State::RightVariable(name, _, value) => {
-                            var_map.insert(name.trim().to_owned(), value);
-                            State::Left(String::new())
-                        }
-                        State::RightRule(targets, prereqs) => {
-                            while matches!(it.peek(), Some('\n') | Some('#')) {
-                                if let Some('#') = it.next() {
-                                    while *(it.peek().unwrap()) != '\n' {
-                                        it.next();
-                                    }
-                                };
-                            }
-                            match it.peek() {
-                                Some('\t') => {
-                                    it.next(); // Skip \t
-                                    State::Recipes(
-                                        targets,
-                                        prereqs.split_whitespace().map(|s| s.to_string()).collect(),
-                                        Vec::new(),
-                                        String::new(),
-                                    )
-                                }
-                                _ => {
-                                    let prereqs: Vec<String> =
-                                        prereqs.split_whitespace().map(|s| s.to_string()).collect();
-                                    let recipes = Vec::new();
-                                    rule_list.push(Rule {
-                                        targets,
-                                        prereqs,
-                                        recipes,
-                                    });
-                                    State::Left(String::new())
-                                }
-                            }
-                        }
-                        State::Recipes(targets, prereqs, mut recipes, work) => {
-                            while matches!(it.peek(), Some('\n') | Some('#')) {
-                                if let Some('#') = it.next() {
-                                    while *(it.peek().unwrap()) != '\n' {
-                                        it.next();
-                                    }
-                                };
-                            }
-                            recipes.push(work);
-                            match it.peek() {
-                                Some('\t') => {
-                                    it.next(); // Skip \t
-                                    State::Recipes(targets, prereqs, recipes, String::new())
-                                }
-                                _ => {
-                                    rule_list.push(Rule {
-                                        targets,
-                                        prereqs,
-                                        recipes,
-                                    });
-                                    State::Left(String::new())
-                                }
-                            }
-                        }
-                    };
-                }
-                x => {
-                    let work = match state {
-                        State::Left(ref mut work) => work,
-                        State::RightVariable(_, _, ref mut work) => work,
-                        State::RightRule(_, ref mut work) => work,
-                        State::Recipes(_, _, _, ref mut work) => work,
-                    };
-                    work.push(x);
-                }
-            }
-        }
+        load_makefile(&mut file, &mut var_map, &mut rule_list)?;
     }
 
     let mut final_rule_list: Vec<FinalRule> = Vec::new();
