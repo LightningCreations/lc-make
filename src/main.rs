@@ -48,7 +48,12 @@ fn variable_subst(
             {
                 variable += &c;
             }
-            var_map.get(&variable).unwrap_or(&String::new()).clone()
+            var_map
+                .get(&variable)
+                .unwrap_or(&String::new())
+                .clone()
+                .trim()
+                .to_owned()
         }
         Some(x) => panic!("${} ???", x),
         x => panic!("{:#?}", x),
