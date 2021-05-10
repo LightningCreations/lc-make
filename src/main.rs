@@ -268,14 +268,20 @@ fn main() -> std::io::Result<()> {
                 handled = true;
                 if rule.prereqs.len() == 0 {
                     append_implicit_rules = false;
-                } else if rule.prereqs.len() != 1 || rule.prereqs[0] != ".hpux_make_needs_suffix_list" { // Workaround for CMake's workaround to a problem we don't have
+                } else if rule.prereqs.len() != 1
+                    || rule.prereqs[0] != ".hpux_make_needs_suffix_list"
+                {
+                    // Workaround for CMake's workaround to a problem we don't have
                     panic!("Unimplemented");
                 }
             } else {
                 let mut it = rule.targets[0].chars();
                 if it.next().unwrap() == '.' {
                     if it.next().unwrap().is_uppercase() {
-                        println!("Warning: {} is unimplemented; treating as a normal rule for now", rule.targets[0]);
+                        println!(
+                            "Warning: {} is unimplemented; treating as a normal rule for now",
+                            rule.targets[0]
+                        );
                     } else if !inference_rules_warning {
                         println!("Warning: POSIX-style inference rules are unimplemented");
                         inference_rules_warning = true;
@@ -296,7 +302,9 @@ fn main() -> std::io::Result<()> {
                 }
                 if !handled {
                     final_rule_list.push(FinalRule {
-                        target, prereqs: rule.prereqs.clone(), recipes: rule.recipes.clone()
+                        target,
+                        prereqs: rule.prereqs.clone(),
+                        recipes: rule.recipes.clone(),
                     });
                 }
             }
