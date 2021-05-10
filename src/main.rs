@@ -85,11 +85,14 @@ fn build(target: &FinalRule, rule_list: &[FinalRule], silent: bool) {
         if !silent {
             println!("{}", recipe);
         }
-        Command::new("sh")
+        let status = Command::new("sh")
             .arg("-c")
             .arg(recipe)
-            .output()
-            .expect("Process exited with nonzero status");
+            .status()
+            .expect("Failed to execute process");
+        if !status.success() {
+            panic!("Program exited with nonzero status, stopping.");
+        }
     }
 }
 
@@ -236,6 +239,27 @@ fn load_makefile(
                     }
                 };
             }
+            '\\' => match it.next() {
+                Some('"') => {
+                    let work = match state {
+                        State::Left(ref mut work) => work,
+                        State::RightVariable(_, _, ref mut work) => work,
+                        State::RightRule(_, ref mut work) => work,
+                        State::Recipes(_, _, _, ref mut work) => work,
+                    };
+                    work.push('"');
+                }
+                Some('\n') => {
+                    let work = match state {
+                        State::Left(ref mut work) => work,
+                        State::RightVariable(_, _, ref mut work) => work,
+                        State::RightRule(_, ref mut work) => work,
+                        State::Recipes(_, _, _, ref mut work) => work,
+                    };
+                    work.push(' ');
+                }
+                _ => panic!("Unsupported backslash escape or EOF"),
+            },
             x => {
                 let work = match state {
                     State::Left(ref mut work) => work,
@@ -332,10 +356,12 @@ fn main() -> std::io::Result<()> {
                 let mut it = rule.targets[0].chars();
                 if it.next().unwrap() == '.' {
                     if it.next().unwrap().is_uppercase() {
+                        /*
                         println!(
                             "Warning: {} is unimplemented; treating as a normal rule for now",
                             rule.targets[0]
                         );
+                        */ // This got annoying fast
                     } else if !inference_rules_warning {
                         handled = true;
                         println!("Warning: POSIX-style inference rules are unimplemented");
