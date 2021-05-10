@@ -25,6 +25,19 @@ enum State {
     Recipes(Vec<String>, Vec<String>, Vec<String>, String), // Targets, Prereqs, Current list, Processing
 }
 
+#[derive(Debug)]
+struct FinalRule {
+    target: String, // Ever rule in the final list only has one target (or target pattern) it provides
+    prereqs: Vec<String>,
+    recipes: Vec<String>,
+}
+
+struct Rule {
+    targets: Vec<String>,
+    prereqs: Vec<String>,
+    recipes: Vec<String>,
+}
+
 fn variable_subst(
     it: &mut dyn Iterator<Item = char>,
     var_map: &mut HashMap<String, String>,
@@ -99,6 +112,8 @@ fn main() -> std::io::Result<()> {
             .into_string()
             .unwrap_or(String::from("make")),
     );
+
+    let mut rule_list: Vec<Rule> = Vec::new();
 
     if let Ok(mut file) = file {
         let mut content = String::new();
@@ -193,10 +208,12 @@ fn main() -> std::io::Result<()> {
                                 _ => {
                                     let prereqs: Vec<String> =
                                         prereqs.split_whitespace().map(|s| s.to_string()).collect();
-                                    println!(
-                                        "Rule for targets {:#?}; prereqs {:#?}",
-                                        targets, prereqs
-                                    );
+                                    let recipes = Vec::new();
+                                    rule_list.push(Rule {
+                                        targets,
+                                        prereqs,
+                                        recipes,
+                                    });
                                     State::Left(String::new())
                                 }
                             }
@@ -216,10 +233,11 @@ fn main() -> std::io::Result<()> {
                                     State::Recipes(targets, prereqs, recipes, String::new())
                                 }
                                 _ => {
-                                    println!(
-                                        "Rule for targets {:#?}; prereqs {:#?}, recipes {:#?}",
-                                        targets, prereqs, recipes
-                                    );
+                                    rule_list.push(Rule {
+                                        targets,
+                                        prereqs,
+                                        recipes,
+                                    });
                                     State::Left(String::new())
                                 }
                             }
@@ -238,5 +256,57 @@ fn main() -> std::io::Result<()> {
             }
         }
     }
+
+    let mut final_rule_list: Vec<FinalRule> = Vec::new();
+    let mut append_implicit_rules = true;
+    let mut inference_rules_warning = false;
+
+    for rule in rule_list {
+        let mut handled = false;
+        if rule.targets.len() == 1 {
+            if rule.targets[0] == ".SUFFIXES" {
+                handled = true;
+                if rule.prereqs.len() == 0 {
+                    append_implicit_rules = false;
+                } else if rule.prereqs.len() != 1 || rule.prereqs[0] != ".hpux_make_needs_suffix_list" { // Workaround for CMake's workaround to a problem we don't have
+                    panic!("Unimplemented");
+                }
+            } else {
+                let mut it = rule.targets[0].chars();
+                if it.next().unwrap() == '.' {
+                    if it.next().unwrap().is_uppercase() {
+                        println!("Warning: {} is unimplemented; treating as a normal rule for now", rule.targets[0]);
+                    } else if !inference_rules_warning {
+                        println!("Warning: POSIX-style inference rules are unimplemented");
+                        inference_rules_warning = true;
+                    }
+                }
+            }
+        }
+        if !handled {
+            for target in rule.targets {
+                let mut handled = false;
+                for existing_rule in &mut final_rule_list {
+                    if existing_rule.target == target {
+                        existing_rule.prereqs.append(&mut rule.prereqs.clone());
+                        existing_rule.recipes = rule.recipes.clone();
+                        handled = true;
+                        break;
+                    }
+                }
+                if !handled {
+                    final_rule_list.push(FinalRule {
+                        target, prereqs: rule.prereqs.clone(), recipes: rule.recipes.clone()
+                    });
+                }
+            }
+        }
+    }
+    if append_implicit_rules && !inference_rules_warning {
+        println!("Warning: POSIX-style inference rules are unimplemented");
+    }
+
+    println!("{:#?}", final_rule_list);
+
     Ok(())
 }
