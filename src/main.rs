@@ -93,7 +93,11 @@ fn build(target: &FinalRule, rule_list: &[FinalRule], silent: bool) {
     }
 }
 
-fn load_makefile(file: &mut File, var_map: &mut HashMap<String, String>, rule_list: &mut Vec<Rule>) -> std::io::Result<()> {
+fn load_makefile(
+    file: &mut File,
+    var_map: &mut HashMap<String, String>,
+    rule_list: &mut Vec<Rule>,
+) -> std::io::Result<()> {
     let mut content = String::new();
     file.read_to_string(&mut content)?;
     let mut it = content.chars().peekable();
