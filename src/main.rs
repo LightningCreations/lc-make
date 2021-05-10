@@ -269,6 +269,15 @@ fn load_makefile(
                 };
             }
             '\\' => match it.next() {
+                Some(' ') => {
+                    let work = match state {
+                        State::Left(ref mut work) => work,
+                        State::RightVariable(_, _, ref mut work) => work,
+                        State::RightRule(_, ref mut work) => work,
+                        State::Recipes(_, _, _, ref mut work) => work,
+                    };
+                    work.push_str("\\ ");
+                }
                 Some('"') => {
                     let work = match state {
                         State::Left(ref mut work) => work,
