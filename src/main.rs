@@ -77,11 +77,15 @@ fn build(target: &FinalRule, rule_list: &[FinalRule], silent: bool) {
                 break;
             }
         }
-        if !success {
+        if !success && !Path::new(prereq).exists() {
             panic!("No rule to build target \"{}\", stopping.", prereq);
         }
     }
     for recipe in &target.recipes {
+        let mut recipe = recipe.trim();
+        if recipe.starts_with('@') {
+            recipe = recipe[1..].trim();
+        }
         if !silent {
             println!("{}", recipe);
         }
@@ -416,6 +420,10 @@ fn main() -> std::io::Result<()> {
         &final_rule_list[0]
     };
 
-    build(rule, &final_rule_list, matches.is_present("silent"));
+    build(
+        rule,
+        &final_rule_list,
+        /*matches.is_present("silent")*/ false,
+    ); // don't be silent for debugging purposes
     Ok(())
 }
