@@ -30,9 +30,25 @@ struct Rule {
 
 fn variable_subst(
     it: &mut dyn Iterator<Item = char>,
-    var_map: &mut HashMap<String, String>,
+    var_map: &HashMap<String, String>,
+    target: Option<&String>,
+    deps: Option<&[String]>,
 ) -> String {
     match it.next() {
+        Some('@') => match target {
+            Some(x) => x.clone(),
+            None => String::from("$@"), // Delay processing until target processing
+        },
+        Some('<') => match deps {
+            Some(deps) => {
+                let mut result = String::new();
+                for dep in deps {
+                    result += dep;
+                }
+                result
+            }
+            None => String::from("$<"), // Delay processing until target processing
+        },
         Some('$') => String::from("$"),
         Some('(') => {
             let mut variable: String = String::new();
@@ -40,7 +56,7 @@ fn variable_subst(
             while {
                 c = match it.next() {
                     Some('#') => panic!("Syntax error"),
-                    Some('$') => variable_subst(it, var_map),
+                    Some('$') => variable_subst(it, var_map, target, deps),
                     Some(x) => x.to_string(),
                     x => panic!("{:#?}", x),
                 };
@@ -73,14 +89,19 @@ fn matches(spec: String, name: String) -> MatchResult {
 }
 */
 
-fn build(target: &FinalRule, rule_list: &[FinalRule], silent: bool) -> SystemTime {
+fn build(
+    target: &FinalRule,
+    var_map: &HashMap<String, String>,
+    rule_list: &[FinalRule],
+    silent: bool,
+) -> SystemTime {
     let mut newest_dep: SystemTime = SystemTime::UNIX_EPOCH;
     for prereq in &target.prereqs {
         let mut success = false;
         for rule in rule_list {
             if rule.target == *prereq {
                 success = true;
-                newest_dep = std::cmp::max(build(rule, rule_list, silent), newest_dep);
+                newest_dep = std::cmp::max(build(rule, var_map, rule_list, silent), newest_dep);
                 break;
             }
         }
@@ -106,7 +127,24 @@ fn build(target: &FinalRule, rule_list: &[FinalRule], silent: bool) -> SystemTim
             .unwrap();
     }
     for recipe in &target.recipes {
-        let mut recipe = recipe.trim();
+        let mut recipe_san = String::new();
+        let mut it = recipe.chars().peekable();
+        while let Some(c) = it.next() {
+            match c {
+                '$' => {
+                    recipe_san.push_str(&variable_subst(
+                        &mut it,
+                        var_map,
+                        Some(&target.target),
+                        Some(&target.prereqs),
+                    ));
+                }
+                x => {
+                    recipe_san.push(x);
+                }
+            }
+        }
+        let mut recipe = recipe_san.trim();
         if recipe.starts_with('@') {
             recipe = recipe[1..].trim();
         }
@@ -143,7 +181,7 @@ fn load_makefile(
                     State::RightVariable(_, _, ref mut work) => work,
                     State::Recipes(_, _, _, ref mut work) => work,
                 };
-                work.push_str(&variable_subst(&mut it, var_map));
+                work.push_str(&variable_subst(&mut it, var_map, None, None));
             }
             '#' => {
                 while *(it.peek().unwrap()) != '\n' {
@@ -454,6 +492,11 @@ fn main() -> std::io::Result<()> {
         &final_rule_list[0]
     };
 
-    build(rule, &final_rule_list, matches.is_present("silent")); // don't be silent for debugging purposes
+    build(
+        rule,
+        &var_map,
+        &final_rule_list,
+        matches.is_present("silent"),
+    ); // don't be silent for debugging purposes
     Ok(())
 }
