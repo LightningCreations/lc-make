@@ -285,7 +285,7 @@ fn load_makefile(
                         State::RightRule(_, ref mut work) => work,
                         State::Recipes(_, _, _, ref mut work) => work,
                     };
-                    work.push('"');
+                    work.push_str("\\\"");
                 }
                 Some('\n') => {
                     let work = match state {
