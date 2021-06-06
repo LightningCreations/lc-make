@@ -39,6 +39,16 @@ fn variable_subst(
             Some(x) => x.clone(),
             None => String::from("$@"), // Delay processing until target processing
         },
+        Some('?') => match deps {
+            Some(deps) => {
+                let mut result = String::new();
+                for dep in deps {
+                    result += dep;
+                }
+                result
+            }
+            None => String::from("$?"), // Delay processing until target processing
+        },
         Some('<') => match deps {
             Some(deps) => {
                 let mut result = String::new();
@@ -62,6 +72,28 @@ fn variable_subst(
                 };
                 &c
             } != ")"
+            {
+                variable += &c;
+            }
+            var_map
+                .get(&variable)
+                .unwrap_or(&String::new())
+                .clone()
+                .trim()
+                .to_owned()
+        }
+        Some('{') => {
+            let mut variable: String = String::new();
+            let mut c: String;
+            while {
+                c = match it.next() {
+                    Some('#') => panic!("Syntax error"),
+                    Some('$') => variable_subst(it, var_map, target, deps),
+                    Some(x) => x.to_string(),
+                    x => panic!("{:#?}", x),
+                };
+                &c
+            } != "}"
             {
                 variable += &c;
             }
@@ -307,24 +339,6 @@ fn load_makefile(
                 };
             }
             '\\' => match it.next() {
-                Some(' ') => {
-                    let work = match state {
-                        State::Left(ref mut work) => work,
-                        State::RightVariable(_, _, ref mut work) => work,
-                        State::RightRule(_, ref mut work) => work,
-                        State::Recipes(_, _, _, ref mut work) => work,
-                    };
-                    work.push_str("\\ ");
-                }
-                Some('"') => {
-                    let work = match state {
-                        State::Left(ref mut work) => work,
-                        State::RightVariable(_, _, ref mut work) => work,
-                        State::RightRule(_, ref mut work) => work,
-                        State::Recipes(_, _, _, ref mut work) => work,
-                    };
-                    work.push_str("\\\"");
-                }
                 Some('\n') => {
                     let work = match state {
                         State::Left(ref mut work) => work,
@@ -334,7 +348,17 @@ fn load_makefile(
                     };
                     work.push(' ');
                 }
-                _ => panic!("Unsupported backslash escape or EOF"),
+                Some(x) => {
+                    let work = match state {
+                        State::Left(ref mut work) => work,
+                        State::RightVariable(_, _, ref mut work) => work,
+                        State::RightRule(_, ref mut work) => work,
+                        State::Recipes(_, _, _, ref mut work) => work,
+                    };
+                    work.push('\\');
+                    work.push(x);
+                }
+                _ => panic!("Unexpected EOF"),
             },
             x => {
                 let work = match state {
