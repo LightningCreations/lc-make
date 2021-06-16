@@ -22,7 +22,7 @@ fn main() -> std::io::Result<()> {
         "Use <file> as the Makefile instead of Makefile",
     );
     ap.refer(&mut target)
-        .add_argument("target", argparse::ParseOption, "Target to build");
+        .add_argument("TARGET", argparse::ParseOption, "TARGET to build");
     ap.refer(&mut silent).add_option(
         &["--silent", "-s", "--quiet"],
         argparse::StoreTrue,
