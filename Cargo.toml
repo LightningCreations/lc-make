@@ -7,3 +7,6 @@ edition = "2018"
 
 [dependencies]
 argparse = "0.2.2"
+
+[[bin]]
+name="lc-make"
