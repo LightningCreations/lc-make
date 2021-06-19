@@ -35,6 +35,7 @@ struct Rule {
 pub struct MakeFileLoader {
     var_map: HashMap<String, String>,
     rule_list: Vec<Rule>,
+    include_list: Vec<String>,
 }
 
 impl Default for MakeFileLoader {
@@ -55,6 +56,7 @@ impl Default for MakeFileLoader {
         Self {
             var_map,
             rule_list: Vec::new(),
+            include_list: Vec::new(),
         }
     }
 }
@@ -144,6 +146,14 @@ impl MakeFileLoader {
                                 self.load(&mut file)?;
                             } else {
                                 panic!("Couldn't open {}", filename);
+                            }
+                            State::Left(String::new())
+                        }
+                        State::Left(x) if x.trim().starts_with("-include ") => {
+                            let filename = x.trim()[9..].trim();
+                            let file = File::open(filename);
+                            if let Ok(mut file) = file {
+                                self.load(&mut file)?;
                             }
                             State::Left(String::new())
                         }
@@ -275,7 +285,7 @@ impl MakeFileLoader {
         let mut inference_rules_warning = false;
 
         // destructure into variables so we can do move them
-        let MakeFileLoader { var_map, rule_list } = self;
+        let MakeFileLoader { var_map, rule_list, include_list } = self;
 
         for rule in rule_list {
             let mut handled = false;
@@ -334,7 +344,7 @@ impl MakeFileLoader {
             // println!("Warning: POSIX-style inference rules are unimplemented");
         }
 
-        MakeFile::new(var_map, final_rule_list)
+        MakeFile::new(var_map, final_rule_list, include_list)
     }
 }
 

@@ -51,14 +51,16 @@ impl FinalRule {
 pub struct MakeFile {
     var_map: HashMap<String, String>,
     finalised_rules: Vec<FinalRule>,
+    include_list: Vec<String>,
 }
 
 impl MakeFile {
     /// The crate internal constructor for a Makefile
-    pub(crate) fn new(var_map: HashMap<String, String>, finalised_rules: Vec<FinalRule>) -> Self {
+    pub(crate) fn new(var_map: HashMap<String, String>, finalised_rules: Vec<FinalRule>, include_list: Vec<String>) -> Self {
         MakeFile {
             var_map,
             finalised_rules,
+            include_list,
         }
     }
 
