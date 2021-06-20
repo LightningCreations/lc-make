@@ -78,7 +78,7 @@ impl MakeFile {
         match it.next().expect("Unexpected end of variable, quitting!") {
             '@' => target.to_owned(),
             '?' => deps.iter().fold(String::new(), |res, dep| res + " " + dep),
-            '<' => deps.iter().fold(String::new(), |res, dep| res + " " + dep),
+            '<' => deps.iter().next().unwrap_or(&String::new()).clone(),
             '$' => String::from("$"),
             // handle bracketed variables
             '(' => get_var_trimmed(
