@@ -137,11 +137,15 @@ impl MakeFile {
             }
 
             let mut recipe = recipe_san.trim();
+            let recipe_silent;
             if recipe.starts_with('@') {
                 recipe = recipe[1..].trim();
+                recipe_silent = true;
+            } else {
+                recipe_silent = false;
             }
 
-            if !silent {
+            if !silent && !recipe_silent {
                 println!("{}", recipe);
             }
 

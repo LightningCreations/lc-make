@@ -3,6 +3,7 @@ use std::env;
 use std::fs::File;
 use std::io::Read;
 use std::path::PathBuf;
+use std::process::Command;
 
 use crate::makefile::{FinalRule, MakeFile};
 
@@ -52,6 +53,9 @@ impl Default for MakeFileLoader {
                 .flatten()
                 .unwrap_or_else(|| String::from("make")),
         );
+
+        var_map.insert(String::from("CC"), String::from("cc"));
+        var_map.insert(String::from("CXX"), String::from("c++"));
 
         Self {
             var_map,
@@ -357,10 +361,22 @@ pub(crate) fn get_var_trimmed(
     var_map: &HashMap<String, String>,
     variable: impl AsRef<str>,
 ) -> String {
-    var_map
-        .get(variable.as_ref())
-        .map(|s| s.as_str().trim().to_owned())
-        .unwrap_or_else(String::new)
+    let variable = variable.as_ref();
+    if variable.starts_with("shell ") {
+        let output = Command::new("sh").arg("-c").arg(&variable[6..]).output();
+        if let Ok(output) = output {
+            String::from_utf8(output.stdout)
+                .expect("Command didn't output valid UTF-8")
+                .replace("\n", "")
+        } else {
+            String::new()
+        }
+    } else {
+        var_map
+            .get(variable)
+            .map(|s| s.as_str().trim().to_owned())
+            .unwrap_or_else(String::new)
+    }
 }
 
 /// function for reading a bracketed variable
