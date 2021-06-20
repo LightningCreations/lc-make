@@ -56,7 +56,11 @@ pub struct MakeFile {
 
 impl MakeFile {
     /// The crate internal constructor for a Makefile
-    pub(crate) fn new(var_map: HashMap<String, String>, finalised_rules: Vec<FinalRule>, include_list: Vec<String>) -> Self {
+    pub(crate) fn new(
+        var_map: HashMap<String, String>,
+        finalised_rules: Vec<FinalRule>,
+        include_list: Vec<String>,
+    ) -> Self {
         MakeFile {
             var_map,
             finalised_rules,
@@ -156,12 +160,22 @@ impl MakeFile {
 
     /// Builds the default target
     pub fn build_default(&self, silent: bool) {
-        let rule = self
-            .finalised_rules
-            .first()
-            .expect("No targets available, quitting!");
-
-        self.build(rule, silent);
+        let default_target = self.var_map.get(".DEFAULT_GOAL"); // Naming is consistent
+        let mut rule = None;
+        if let Some(default_target) = default_target {
+            rule = self
+                .finalised_rules
+                .iter()
+                .find(|rule| rule.target == *default_target);
+        }
+        if rule == None {
+            rule = self.finalised_rules.first();
+        }
+        if let Some(rule) = rule {
+            self.build(rule, silent);
+        } else {
+            panic!("No targets available, quitting!");
+        }
     }
 
     /// Builds a makefile target

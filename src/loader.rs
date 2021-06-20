@@ -285,7 +285,11 @@ impl MakeFileLoader {
         let mut inference_rules_warning = false;
 
         // destructure into variables so we can do move them
-        let MakeFileLoader { var_map, rule_list, include_list } = self;
+        let MakeFileLoader {
+            var_map,
+            rule_list,
+            include_list,
+        } = self;
 
         for rule in rule_list {
             let mut handled = false;
