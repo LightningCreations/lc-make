@@ -81,158 +81,238 @@ impl MakeFileLoader {
         let mut it = content.chars().peekable();
         let mut state = State::Left(String::new());
 
+        // when the top is true we don't skip else we skip
+        let mut skip_stack = vec![true];
+        let mut skip_buf = String::new();
+
         while let Some(c) = it.next() {
-            match c {
-                '$' => {
-                    let work = match state {
-                        State::Left(ref mut work) => work,
-                        State::RightRule(_, ref mut work) => work,
-                        State::RightVariable(_, _, ref mut work) => work,
-                        State::Recipes(_, _, _, ref mut work) => work,
-                    };
-                    work.push_str(self.substitute_var(&mut it).as_str());
-                }
-                '#' => {
-                    while *(it.peek().expect(EOF_MESSAGE)) != '\n' {
-                        it.next();
-                    }
-                }
-                ':' => match state {
-                    State::Left(prev) => {
-                        let next = it.peek();
-                        state = match next {
-                            Some(':') => {
-                                it.next();
-                                if it.next() != Some('=') {
-                                    panic!("Syntax error");
-                                }
-                                State::RightVariable(prev, Var::Complex, String::new())
-                            }
-                            Some('=') => {
-                                it.next();
-                                State::RightVariable(prev, Var::Complex, String::new())
-                            }
-                            _ => State::RightRule(
-                                prev.split_whitespace().map(str::to_string).collect(),
-                                String::new(),
-                            ),
-                        }
-                    }
-                    State::RightVariable(_, _, ref mut work) => {
-                        work.push(':');
-                    }
-                    State::Recipes(_, _, _, ref mut work) => {
-                        work.push(':');
-                    }
-                    _ => panic!("Syntax error"),
-                },
-                '=' => {
-                    match state {
-                        State::Left(prev) => {
-                            state = State::RightVariable(prev, Var::Simple, String::new());
-                        }
-                        State::RightVariable(_, _, ref mut work) => {
-                            work.push('=');
-                        }
-                        State::Recipes(_, _, _, ref mut work) => {
-                            work.push('=');
-                        }
-                        _ => panic!("Syntax error"),
-                    };
-                }
-                '\n' => {
-                    state = match state {
-                        State::Left(x) if x.trim().is_empty() => State::Left(String::new()),
-                        State::Left(x) if x.trim().starts_with("include ") => {
-                            let filename = x.trim()[8..].trim();
-                            let file = File::open(filename);
-                            if let Ok(mut file) = file {
-                                self.load(&mut file)?;
-                            } else {
-                                panic!("Couldn't open {}", filename);
-                            }
-                            State::Left(String::new())
-                        }
-                        State::Left(x) if x.trim().starts_with("-include ") => {
-                            let filename = x.trim()[9..].trim();
-                            let file = File::open(filename);
-                            if let Ok(mut file) = file {
-                                self.load(&mut file)?;
-                            }
-                            State::Left(String::new())
-                        }
-                        State::Left(_) => panic!("Syntax error"),
-                        State::RightVariable(name, _, value) => {
-                            self.var_map.insert(name.trim().to_owned(), value);
-                            State::Left(String::new())
-                        }
-                        State::RightRule(targets, prereqs) => {
-                            while matches!(it.peek(), Some('\n') | Some('#')) {
-                                if let Some('#') = it.next() {
-                                    while *(it.peek().expect(EOF_MESSAGE)) != '\n' {
-                                        it.next();
-                                    }
-                                };
-                            }
-                            match it.peek() {
-                                Some('\t') => {
-                                    it.next(); // Skip \t
-                                    State::Recipes(
-                                        targets,
-                                        prereqs.split_whitespace().map(str::to_string).collect(),
-                                        Vec::new(),
-                                        String::new(),
-                                    )
-                                }
-                                _ => {
-                                    let prereqs: Vec<String> =
-                                        prereqs.split_whitespace().map(str::to_string).collect();
-                                    let recipes = Vec::new();
-                                    self.rule_list.push(Rule {
-                                        targets,
-                                        prereqs,
-                                        recipes,
-                                    });
-                                    State::Left(String::new())
-                                }
-                            }
-                        }
-                        State::Recipes(targets, prereqs, mut recipes, work) => {
-                            while matches!(it.peek(), Some('\n') | Some('#')) {
-                                if let Some('#') = it.next() {
-                                    while *(it.peek().expect(EOF_MESSAGE)) != '\n' {
-                                        it.next();
-                                    }
-                                };
-                            }
-                            recipes.push(work);
-                            match it.peek() {
-                                Some('\t') => {
-                                    it.next(); // Skip \t
-                                    State::Recipes(targets, prereqs, recipes, String::new())
-                                }
-                                _ => {
-                                    self.rule_list.push(Rule {
-                                        targets,
-                                        prereqs,
-                                        recipes,
-                                    });
-                                    State::Left(String::new())
-                                }
-                            }
-                        }
-                    };
-                }
-                '\\' => match it.next().expect(EOF_MESSAGE) {
+            let skip = !skip_stack.last().expect("missmatched conditonals");
+            if skip {
+                match c {
                     '\n' => {
+                        match skip_buf.trim() {
+                            "else" => {
+                                if let Some(last) = skip_stack.last_mut() {
+                                    // we know we need to stop skipping
+                                    // in the else branch if we're here
+                                    *last = true
+                                } else {
+                                    panic!("missmatched conditionals")
+                                }
+                            }
+                            "endif" => {
+                                skip_stack.pop().expect("missmatched conditionals");
+                            }
+                            _ => {}
+                        }
+                        skip_buf = String::new()
+                    }
+                    x => {
+                        skip_buf.push(x);
+                    }
+                }
+            } else {
+                match c {
+                    '$' => {
                         let work = match state {
                             State::Left(ref mut work) => work,
-                            State::RightVariable(_, _, ref mut work) => work,
                             State::RightRule(_, ref mut work) => work,
+                            State::RightVariable(_, _, ref mut work) => work,
                             State::Recipes(_, _, _, ref mut work) => work,
                         };
-                        work.push(' ');
+                        work.push_str(self.substitute_var(&mut it).as_str());
                     }
+                    '#' => {
+                        while *(it.peek().expect(EOF_MESSAGE)) != '\n' {
+                            it.next();
+                        }
+                    }
+                    ':' => match state {
+                        State::Left(prev) => {
+                            let next = it.peek();
+                            state = match next {
+                                Some(':') => {
+                                    it.next();
+                                    if it.next() != Some('=') {
+                                        panic!("Syntax error");
+                                    }
+                                    State::RightVariable(prev, Var::Complex, String::new())
+                                }
+                                Some('=') => {
+                                    it.next();
+                                    State::RightVariable(prev, Var::Complex, String::new())
+                                }
+                                _ => State::RightRule(
+                                    prev.split_whitespace().map(str::to_string).collect(),
+                                    String::new(),
+                                ),
+                            }
+                        }
+                        State::RightVariable(_, _, ref mut work) => {
+                            work.push(':');
+                        }
+                        State::Recipes(_, _, _, ref mut work) => {
+                            work.push(':');
+                        }
+                        _ => panic!("Syntax error"),
+                    },
+                    '=' => {
+                        match state {
+                            State::Left(prev) => {
+                                state = State::RightVariable(prev, Var::Simple, String::new());
+                            }
+                            State::RightVariable(_, _, ref mut work) => {
+                                work.push('=');
+                            }
+                            State::Recipes(_, _, _, ref mut work) => {
+                                work.push('=');
+                            }
+                            _ => panic!("Syntax error"),
+                        };
+                    }
+                    '\n' => {
+                        state = match state {
+                            State::Left(x) if x.trim().is_empty() => State::Left(String::new()),
+                            State::Left(x) if x.trim().starts_with("include ") => {
+                                let filename = x.trim()[8..].trim();
+                                let file = File::open(filename);
+                                if let Ok(mut file) = file {
+                                    self.load(&mut file)?;
+                                } else {
+                                    panic!("Couldn't open {}", filename);
+                                }
+                                State::Left(String::new())
+                            }
+                            State::Left(x) if x.trim().starts_with("-include ") => {
+                                let filename = x.trim()[9..].trim();
+                                let file = File::open(filename);
+                                if let Ok(mut file) = file {
+                                    self.load(&mut file)?;
+                                }
+                                State::Left(String::new())
+                            }
+                            State::Left(x) if x.trim().starts_with("ifdef ") => {
+                                let rhs = x.trim()[5..].trim();
+                                let rhs = if rhs.starts_with("$") {
+                                    self.substitute_var(&mut x[1..].chars())
+                                } else {
+                                    rhs.to_string()
+                                };
+                                skip_stack.push(self.var_map.contains_key(&rhs));
+                                State::Left(String::new())
+                            }
+                            State::Left(x) if x.trim().starts_with("ifndef ") => {
+                                let rhs = x.trim()[6..].trim();
+                                let rhs = if rhs.starts_with("$") {
+                                    self.substitute_var(&mut x[1..].chars())
+                                } else {
+                                    rhs.to_string()
+                                };
+                                skip_stack.push(!self.var_map.contains_key(&rhs));
+                                State::Left(String::new())
+                            }
+                            State::Left(x) if x.trim() == "else" => {
+                                if let Some(last) = skip_stack.last_mut() {
+                                    // we know we need to start skipping
+                                    // in the else branch if we're here
+                                    *last = false
+                                } else {
+                                    panic!("missmatched conditionals")
+                                }
+                                State::Left(String::new())
+                            }
+                            State::Left(x) if x.trim() == "endif" => {
+                                skip_stack.pop().expect("missmatched conditionals");
+                                State::Left(String::new())
+                            }
+                            State::Left(_) => panic!("Syntax error"),
+                            State::RightVariable(name, _, value) => {
+                                self.var_map.insert(name.trim().to_owned(), value);
+                                State::Left(String::new())
+                            }
+                            State::RightRule(targets, prereqs) => {
+                                while matches!(it.peek(), Some('\n') | Some('#')) {
+                                    if let Some('#') = it.next() {
+                                        while *(it.peek().expect(EOF_MESSAGE)) != '\n' {
+                                            it.next();
+                                        }
+                                    };
+                                }
+                                match it.peek() {
+                                    Some('\t') => {
+                                        it.next(); // Skip \t
+                                        State::Recipes(
+                                            targets,
+                                            prereqs
+                                                .split_whitespace()
+                                                .map(str::to_string)
+                                                .collect(),
+                                            Vec::new(),
+                                            String::new(),
+                                        )
+                                    }
+                                    _ => {
+                                        let prereqs: Vec<String> = prereqs
+                                            .split_whitespace()
+                                            .map(str::to_string)
+                                            .collect();
+                                        let recipes = Vec::new();
+                                        self.rule_list.push(Rule {
+                                            targets,
+                                            prereqs,
+                                            recipes,
+                                        });
+                                        State::Left(String::new())
+                                    }
+                                }
+                            }
+                            State::Recipes(targets, prereqs, mut recipes, work) => {
+                                while matches!(it.peek(), Some('\n') | Some('#')) {
+                                    if let Some('#') = it.next() {
+                                        while *(it.peek().expect(EOF_MESSAGE)) != '\n' {
+                                            it.next();
+                                        }
+                                    };
+                                }
+                                recipes.push(work);
+                                match it.peek() {
+                                    Some('\t') => {
+                                        it.next(); // Skip \t
+                                        State::Recipes(targets, prereqs, recipes, String::new())
+                                    }
+                                    _ => {
+                                        self.rule_list.push(Rule {
+                                            targets,
+                                            prereqs,
+                                            recipes,
+                                        });
+                                        State::Left(String::new())
+                                    }
+                                }
+                            }
+                        };
+                    }
+                    '\\' => match it.next().expect(EOF_MESSAGE) {
+                        '\n' => {
+                            let work = match state {
+                                State::Left(ref mut work) => work,
+                                State::RightVariable(_, _, ref mut work) => work,
+                                State::RightRule(_, ref mut work) => work,
+                                State::Recipes(_, _, _, ref mut work) => work,
+                            };
+                            work.push(' ');
+                        }
+                        x => {
+                            let work = match state {
+                                State::Left(ref mut work) => work,
+                                State::RightVariable(_, _, ref mut work) => work,
+                                State::RightRule(_, ref mut work) => work,
+                                State::Recipes(_, _, _, ref mut work) => work,
+                            };
+                            work.push('\\');
+                            work.push(x);
+                        }
+                    },
                     x => {
                         let work = match state {
                             State::Left(ref mut work) => work,
@@ -240,18 +320,8 @@ impl MakeFileLoader {
                             State::RightRule(_, ref mut work) => work,
                             State::Recipes(_, _, _, ref mut work) => work,
                         };
-                        work.push('\\');
                         work.push(x);
                     }
-                },
-                x => {
-                    let work = match state {
-                        State::Left(ref mut work) => work,
-                        State::RightVariable(_, _, ref mut work) => work,
-                        State::RightRule(_, ref mut work) => work,
-                        State::Recipes(_, _, _, ref mut work) => work,
-                    };
-                    work.push(x);
                 }
             }
         }
