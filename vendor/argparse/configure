@@ -584,6 +584,7 @@ PACKAGE_URL=
 ac_subst_vars='LTLIBOBJS
 LIBOBJS
 detected_cfg
+rustc_has_std
 RUSTFLAGS
 RUSTC
 INSTALL_DATA
@@ -2853,98 +2854,144 @@ done
     then
         as_fn_error $? "Failed to find a rust compiler. Install rustc in PATH, or set RUSTC to a suitable compiler" "$LINENO" 5
     fi
+    { $as_echo "$as_me:${as_lineno-$LINENO}: checking how to compile for $host with $RUSTC" >&5
+$as_echo_n "checking how to compile for $host with $RUSTC... " >&6; }
+    case x$RUSTC in
+        x${host_alias}-* | x*\\/${host_alias}-* )
+            rustc_host_target=${host_alias}
+            { $as_echo "$as_me:${as_lineno-$LINENO}: result: Not needed" >&5
+$as_echo "Not needed" >&6; }
+            ;;
+        x${host}-* | x*\\/${host}-* )
+            rustc_host_target=${host}
+            { $as_echo "$as_me:${as_lineno-$LINENO}: result: Not needed" >&5
+$as_echo "Not needed" >&6; }
+            ;;
 
-    if test x$host_alias != x
-    then
-        case $RUSTC in
-            *\\/$host-* )                 ;;
-            * )
-                SAVE_RUSTFLAGS="$RUSTFLAGS"
-                { $as_echo "$as_me:${as_lineno-$LINENO}: checking how to cross compile with $RUSTC" >&5
-$as_echo_n "checking how to cross compile with $RUSTC... " >&6; }
-                RUSTFLAGS="$RUSTFLAGS --target $host"
-                echo '' > test.rs
-                $RUSTC $RUSTFLAGS --crate-type rlib --crate-name test test.rs 2>> config.log > /dev/null
+        x* )
+            SAVE_RUSTFLAGS="$RUSTFLAGS"
+            if test x$host_alias != x
+            then
+                RUSTFLAGS="$RUSTFLAGS --target $host_alias"
+                echo '#![no_std]' > comptest.rs
+                echo Trying target $host_alias >> config.log
+                echo "$RUSTC $RUSTFLAGS --crate-type rlib --crate-name comptest comptest.rs" >> config.log
+                $RUSTC $RUSTFLAGS --crate-type rlib --crate-name comptest comptest.rs 2>> config.log > /dev/null
 
                 if test $? -eq 0
                 then
-                    { $as_echo "$as_me:${as_lineno-$LINENO}: result: --target $host" >&5
-$as_echo "--target $host" >&6; }
+                    rustc_host_target=$host_alias
                 else
-                    rm -f test.rs libtest.rlib
-                    RUSTFLAGS="$SAVE_RUSTFLAGS --target $host_alias"
-                    echo '' > test.rs
-                    $RUSTC $RUSTFLAGS --crate-type rlib --crate-name test test.rs  2>> config.log > /dev/null
+                    echo Using target $host_alias failed >> config.log
+                fi
+            fi
+
+            if test x$rustc_host_target \= x
+            then
+                RUSTFLAGS="$SAVE_RUSTFLAGS --target $host"
+                echo '#![no_std]' > comptest.rs
+                echo Trying target $host >> config.log
+                echo "$RUSTC $RUSTFLAGS --crate-type rlib --crate-name comptest comptest.rs" >> config.log
+                $RUSTC $RUSTFLAGS --crate-type rlib --crate-name comptest comptest.rs 2>> config.log > /dev/null
+
+                if test $? -eq 0
+                then
+                    rustc_host_target=$host
+                else
+                    echo Using target $host failed >> config.log
+                fi
+            fi
+
+            if test x$rustc_host_target \= x
+            then
+                case $host in
+                x86_64-*-mingw32 | i*86-*-mingw32 )
+                    IFS="-" read rustc_host_arch rustc_host_vendor rustc_host_sys <<< "$host"
+                    RUSTFLAGS="$SAVE_RUSTFLAGS --target ${rustc_host_arch}-pc-windows-gnu"
+                    echo '#![no_std]' > comptest.rs
+                    echo "$RUSTC $RUSTFLAGS --crate-type rlib --crate-name comptest comptest.rs" >> config.log
+                    $RUSTC $RUSTFLAGS --crate-type rlib --crate-name comptest comptest.rs 2>> config.log > /dev/null
+
                     if test $? -eq 0
                     then
-                        rm -f test.rs libtest.rlib
-                        { $as_echo "$as_me:${as_lineno-$LINENO}: result: --target $host_alias" >&5
-$as_echo "--target $host_alias" >&6; }
-                    else
-                        rm -f test.rs libtest.rlib
-                        case "$host" in
-                            x86_64-pc-*-* )
-                                IFS="-" read arch vendor kernel env  <<< "$host"
-                                host_target="$arch-unknown-$kernel-$env"
-                                RUSTFLAGS="$SAVE_RUSTFLAGS --target $host_target"
-                                echo '' > test.rs
-                                $RUSTC $RUSTFLAGS --crate-type rlib --crate-name test test.rs  2>> config.log > /dev/null
-                                if test $? -eq 0
-                                then
-                                    rm -f test.rs libtest.rlib
-                                    { $as_echo "$as_me:${as_lineno-$LINENO}: result: --target $host_target" >&5
-$as_echo "--target $host_target" >&6; }
-                                else
-                                    { $as_echo "$as_me:${as_lineno-$LINENO}: result: failed" >&5
-$as_echo "failed" >&6; }
-                                    as_fn_error $? "Cannot determine how to cross compile to $host with $RUSTC" "$LINENO" 5
-                                fi
-                            ;;
-
-                            i?86-pc-*-* )
-                                IFS="-" read arch vendor kernel env  <<< "$host"
-                                host_target="$arch-unknown-$kernel-$env"
-                                RUSTFLAGS="$SAVE_RUSTFLAGS --target $host_target"
-                                echo '' > test.rs
-                                $RUSTC $RUSTFLAGS --crate-type rlib --crate-name test test.rs  2>> config.log > /dev/null
-                                if test $? -eq 0
-                                then
-                                    rm -f test.rs libtest.rlib
-                                    { $as_echo "$as_me:${as_lineno-$LINENO}: result: --target $host_target" >&5
-$as_echo "--target $host_target" >&6; }
-                                else
-                                    { $as_echo "$as_me:${as_lineno-$LINENO}: result: failed" >&5
-$as_echo "failed" >&6; }
-                                    as_fn_error $? "Cannot determine how to cross compile to $host with $RUSTC" "$LINENO" 5
-                                fi
-                            ;;
-
-                            *)
-                                { $as_echo "$as_me:${as_lineno-$LINENO}: result: failed" >&5
-$as_echo "failed" >&6; }
-                                as_fn_error $? "Cannot determine how to cross compile to $host with $RUSTC" "$LINENO" 5
-                                ;;
-                        esac
+                        rustc_host_target=${rustc_host_arch}-pc-windows-gnu
                     fi
-                fi
-                ;;
-        esac
-    fi
+                    ;;
+                x86_64-*-*-* | i*86-*-*-* )
+                    IFS="-" read rustc_host_arch rustc_host_vendor rustc_host_os rustc_host_env <<< "$host"
+                    RUSTFLAGS="$SAVE_RUSTFLAGS --target ${rustc_host_arch}-unknown-${rustc_host_os}-${rustc_host_env}"
+                    echo '#![no_std]' > comptest.rs
+                    echo "$RUSTC $RUSTFLAGS --crate-type rlib --crate-name comptest comptest.rs" >> config.log
+                    $RUSTC $RUSTFLAGS --crate-type rlib --crate-name comptest comptest.rs 2>> config.log > /dev/null
 
+                    if test $? -eq 0
+                    then
+                        rustc_host_target=${rustc_host_arch}-unknown-${rustc_host_os}-${rustc_host_env}
+                    fi
+                    ;;
+                x86_64-*-* | i*86-*-* )
+                    IFS="-" read rustc_host_arch rustc_host_vendor rustc_host_sys <<< "$host"
+                    RUSTFLAGS="$SAVE_RUSTFLAGS --target ${rustc_host_arch}-unknown-${rustc_host_sys}"
+                    echo '#![no_std]' > comptest.rs
+
+                    echo "$RUSTC $RUSTFLAGS --crate-type rlib --crate-name comptest comptest.rs" >> config.log
+                    $RUSTC $RUSTFLAGS --crate-type rlib --crate-name comptest comptest.rs 2>> config.log > /dev/null
+
+                    if test $? -eq 0
+                    then
+                        rustc_host_target=${rustc_host_arch}-unknown-${rustc_host_sys}
+                    fi
+                    ;;
+                *-*-* )
+                    IFS="-" read rustc_host_arch rustc_host_vendor rustc_host_sys <<< "$host"
+                    RUSTFLAGS="$SAVE_RUSTFLAGS --target ${rustc_host_arch}-${rustc_host_sys}"
+                    echo '#![no_std]' > comptest.rs
+
+                    echo "$RUSTC $RUSTFLAGS --crate-type rlib --crate-name comptest comptest.rs" >> config.log
+                    $RUSTC $RUSTFLAGS --crate-type rlib --crate-name comptest comptest.rs 2>> config.log > /dev/null
+
+                    if test $? -eq 0
+                    then
+                        rustc_host_target=${rustc_host_arch}-${rustc_host_sys}
+                    fi
+                    ;;
+                esac
+            fi
+            if test x$rustc_host_target \= x
+            then
+                { $as_echo "$as_me:${as_lineno-$LINENO}: result: not found" >&5
+$as_echo "not found" >&6; }
+                as_fn_error $? "Cannot compile to $host with $RUSTC" "$LINENO" 5
+            else
+                { $as_echo "$as_me:${as_lineno-$LINENO}: result: --target $rustc_host_target" >&5
+$as_echo "--target $rustc_host_target" >&6; }
+            fi
+        ;;
+    esac
+    rm -f comptest.rs libcomptest.rlib
     { $as_echo "$as_me:${as_lineno-$LINENO}: checking whether Rust compiler works" >&5
 $as_echo_n "checking whether Rust compiler works... " >&6; }
-    echo 'fn main(){}' > test.rs
-    $RUSTC $RUSTFLAGS --crate-type bin --crate-name test test.rs 2>> config.log > /dev/null
+    echo 'fn main(){}' > comptest.rs
+    $RUSTC $RUSTFLAGS --crate-type bin --crate-name comptest comptest.rs 2>> config.log > /dev/null
     if test $? -ne 0
     then
-        { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
+        echo '#![no_std]' > comptest.rs
+        $RUSTC $RUSTFLAGS --crate-type rlib --crate-name comptest --emit link=libcomptest.rlib comptest.rs 2>> config.log > /dev/null
+        if test $? -ne 0
+        then
+            { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
 $as_echo "no" >&6; }
-        as_fn_error $? "Cannot compile a simple program with $RUSTC" "$LINENO" 5
+            as_fn_error $? "Cannot compile a simple program with $RUSTC" "$LINENO" 5
+        else
+            rustc_has_std=no
+        fi
+    else
+        rustc_has_std=yes
     fi
 
-    if test x$host_alias != x
+    if test x$host_alias \= x
     then
-        ./test${EXEEXT}
+        ./comptest${EXEEXT}
         if test $? -ne 0
         then
             { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
@@ -2953,10 +3000,11 @@ $as_echo "no" >&6; }
         fi
     fi
 
-    rm -rf test.rs test${EXEEXT}
+    rm -f comptest.rs comptest${EXEEXT}
 
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: yes" >&5
 $as_echo "yes" >&6; }
+
 
 
 
